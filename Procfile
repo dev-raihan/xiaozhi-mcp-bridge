@@ -1,0 +1,1 @@
+web: cd /opt/render/project/src && pip install -r requirements.txt && while true; do MCP_ENDPOINT="$MCP_ENDPOINT" MCP_URL="$MCP_URL" python mcp_pipe.py mcp_stdio_client.py; sleep 5; done
