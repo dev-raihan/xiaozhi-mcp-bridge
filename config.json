@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "xiaozhi-bridge": {
-      "type": "http",
-      "url": "https://xiaozhi-mcp-server.skr4test.workers.dev/mcp"
-    }
-  }
-}

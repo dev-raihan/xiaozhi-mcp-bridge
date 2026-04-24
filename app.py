@@ -1,22 +1,59 @@
-from flask import Flask, jsonify
+"""
+Xiaozhi MCP Bridge - Connect external MCP tools to xiaozhi.me
+
+Usage:
+    1. Copy .env.example to .env
+    2. Edit .env with your tokens
+    3. Run: python app.py
+
+Environment Variables (set in .env):
+    MCP_ENDPOINT   - xiaozhi.me WebSocket endpoint (wss://api.xiaozhi.me/mcp/?token=...)
+    MCP_URL        - Your MCP server URL (optional, default provided)
+    PORT           - Server port (default: 10000)
+"""
+
 import os
+import sys
 import asyncio
+import subprocess
 import threading
 import time
 import signal
-import sys
+from dotenv import load_dotenv
 
-app = Flask(__name__)
+load_dotenv()
 
-MCP_ENDPOINT = os.environ.get('MCP_ENDPOINT', '')
-MCP_URL = os.environ.get('MCP_URL', 'https://xiaozhi-mcp-server.skr4test.workers.dev/mcp')
+MCP_ENDPOINT = os.environ.get('MCP_ENDPOINT', '').strip()
+MCP_URL = os.environ.get('MCP_URL', 'https://xiaozhi-mcp-server.skr4test.workers.dev/mcp').strip()
+PORT = int(os.environ.get('PORT', 10000))
 
-connected = False
-last_activity = None
+def check_config():
+    """Validate configuration"""
+    errors = []
+    
+    endpoint = str(MCP_ENDPOINT) if MCP_ENDPOINT else ""
+    
+    if not MCP_ENDPOINT:
+        errors.append("MCP_ENDPOINT is required. Get it from xiaozhi.me dashboard")
+    elif not endpoint.startswith('wss://'):
+        errors.append("MCP_ENDPOINT must start with wss://")
+    elif 'token=' not in endpoint:
+        errors.append("MCP_ENDPOINT must contain 'token=' parameter")
+    
+    if not MCP_URL:
+        errors.append("MCP_URL is required")
+    
+    return errors
 
-def run_bridge():
-    import subprocess
-    import os
+def run_mcp_bridge():
+    """Run the MCP bridge in a loop"""
+    print(f"\n{'='*50}")
+    print("Starting Xiaozhi MCP Bridge...")
+    print(f"{'='*50}")
+    print(f"MCP Endpoint: {MCP_ENDPOINT[:50]}..." if MCP_ENDPOINT else "MCP Endpoint: NOT SET")
+    print(f"MCP URL: {MCP_URL}")
+    print(f"Port: {PORT}")
+    print(f"{'='*50}\n")
     
     while True:
         try:
@@ -24,39 +61,41 @@ def run_bridge():
             env['MCP_ENDPOINT'] = MCP_ENDPOINT
             env['MCP_URL'] = MCP_URL
             
+            print("Starting MCP pipe...")
+            
             process = subprocess.Popen(
                 [sys.executable, 'mcp_pipe.py', 'mcp_stdio_client.py'],
                 env=env,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
             )
+            
+            for line in process.stdout:
+                print(f"[MCP] {line.rstrip()}")
+            
             process.wait()
+            
         except Exception as e:
-            print(f"Bridge error: {e}")
+            print(f"[ERROR] Bridge error: {e}")
+        
+        print("[INFO] Reconnecting in 5 seconds...")
         time.sleep(5)
 
-bridge_thread = None
-
-def start_bridge():
-    global bridge_thread, connected
-    if MCP_ENDPOINT:
-        connected = True
-        bridge_thread = threading.Thread(target=run_bridge, daemon=True)
-        bridge_thread.start()
-
-@app.route('/')
-def index():
-    return jsonify({
-        'status': 'running',
-        'connected': connected,
-        'mcp_endpoint': 'configured' if MCP_ENDPOINT else 'not_set'
-    })
-
-@app.route('/health')
-def health():
-    return jsonify({'status': 'ok'}), 200
+def signal_handler(sig, frame):
+    print("\n[INFO] Shutting down...")
+    sys.exit(0)
 
 if __name__ == '__main__':
-    if MCP_ENDPOINT:
-        start_bridge()
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    errors = check_config()
+    if errors:
+        print("\n[ERROR] Configuration errors:")
+        for e in errors:
+            print(f"  - {e}")
+        print("\n[INFO] Please copy .env.example to .env and configure your tokens")
+        sys.exit(1)
+    
+    run_mcp_bridge()
